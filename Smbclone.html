@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS Mario Clone</title>
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            color: white;
+            font-family: sans-serif;
+        }
+        canvas {
+            border: 4px solid #fff;
+            background: #5c94fc; /* Classic Mario Sky Blue */
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="800" height="480"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// Game Settings & Physics
+const GRAVITY = 0.6;
+const FRICTION = 0.85;
+
+// Keyboard Input State
+const keys = { right: false, left: false, up: false };
+
+// Camera System
+const camera = { x: 0 };
+
+// Player Object (Mario)
+const player = {
+    x: 100,
+    y: 300,
+    width: 32,
+    height: 48,
+    vx: 0,
+    vy: 0,
+    speed: 5,
+    jumpForce: 12,
+    grounded: false,
+    color: "#e60012" // Mario Red
+};
+
+// Level Design (Platforms/Blocks)
+const platforms = [
+    // Ground floors
+    { x: 0, y: 432, width: 1200, height: 48, type: 'ground' },
+    { x: 1300, y: 432, width: 800, height: 48, type: 'ground' }, // Pit stop!
+    
+    // Classic Brick / Question Blocks
+    { x: 200, y: 300, width: 32, height: 32, type: 'block' },
+    { x: 264, y: 300, width: 32, height: 32, type: 'question' },
+    { x: 296, y: 300, width: 32, height: 32, type: 'block' },
+    { x: 328, y: 300, width: 32, height: 32, type: 'question' },
+    { x: 360, y: 300, width: 32, height: 32, type: 'block' },
+    { x: 296, y: 180, width: 32, height: 32, type: 'question' },
+    
+    // Pipes
+    { x: 600, y: 336, width: 64, height: 96, type: 'pipe' },
+    { x: 900, y: 304, width: 64, height: 128, type: 'pipe' },
+];
+
+// Collectibles (Coins)
+let coins = [
+    { x: 272, y: 260, width: 16, height: 20, collected: false },
+    { x: 336, y: 260, width: 16, height: 20, collected: false },
+    { x: 304, y: 140, width: 16, height: 20, collected: false },
+];
+
+// Enemies (Goombas)
+let enemies = [
+    { x: 450, y: 400, width: 32, height: 32, vx: -1.5, color: brown = "#c84c0c", alive: true },
+    { x: 750, y: 400, width: 32, height: 32, vx: -1.5, color: brown = "#c84c0c", alive: true },
+    { x: 1500, y: 400, width: 32, height: 32, vx: -2, color: brown = "#c84c0c", alive: true }
+];
+
+let score = 0;
+
+// Input Listeners
+window.addEventListener("keydown", (e) => {
+    if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = true;
+    if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = true;
+    if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") keys.up = true;
+});
+
+window.addEventListener("keyup", (e) => {
+    if (e.code === "ArrowRight" || e.code === "KeyD") keys.right = false;
+    if (e.code === "ArrowLeft" || e.code === "KeyA") keys.left = false;
+    if (e.code === "Space" || e.code === "ArrowUp" || e.code === "KeyW") keys.up = false;
+});
+
+// AABB Collision Detection Utility
+function checkCollision(objA, objB) {
+    return objA.x < objB.x + objB.width &&
+           objA.x + objA.width > objB.x &&
+           objA.y < objB.y + objB.height &&
+           objA.y + objA.height > objB.y;
+}
+
+// Update Game State
+function update() {
+    // Player Movement
+    if (keys.right) player.vx < player.speed ? player.vx++ : player.vx = player.speed;
+    if (keys.left) player.vx > -player.speed ? player.vx-- : player.vx = -player.speed;
+    
+    // Apply Environment Physics
+    player.vx *= FRICTION;
+    player.vy += GRAVITY;
+    
+    player.grounded = false;
+
+    // Move horizontally & check platform collisions
+    player.x += player.vx;
+    for (let plat of platforms) {
+        if (checkCollision(player, plat)) {
+            if (player.vx > 0) player.x = plat.x - player.width;
+            if (player.vx < 0) player.x = plat.x + plat.width;
+        }
+    }
+
+    // Move vertically & check platform collisions
+    player.y += player.vy;
+    for (let plat of platforms) {
+        if (checkCollision(player, plat)) {
+            if (player.vy > 0) { // Landing on top
+                player.y = plat.y - player.height;
+                player.vy = 0;
+                player.grounded = true;
+            } else if (player.vy < 0) { // Hitting ceiling
+                player.y = plat.y + plat.height;
+                player.vy = 0;
+            }
+        }
+    }
+
+    // Jump Input
+    if (keys.up && player.grounded) {
+        player.vy = -player.jumpForce;
+        player.grounded = false;
+    }
+
+    // Camera Tracking
+    if (player.x > canvas.width / 2) {
+        camera.x = player.x - canvas.width / 2;
+    }
+
+    // Fall in pit / Reset game
+    if (player.y > canvas.height) {
+        resetGame();
+    }
+
+    // Process Coins
+    for (let coin of coins) {
+        if (!coin.collected && checkCollision(player, coin)) {
+            coin.collected = true;
+            score += 100;
+        }
+    }
+
+    // Process Enemies
+    for (let enemy of enemies) {
+        if (!enemy.alive) continue;
+
+        // Enemy patrol physics
+        enemy.vy += GRAVITY;
+        enemy.x += enemy.vx;
+
+        // Enemy platform collisions
+        for (let plat of platforms) {
+            if (checkCollision(enemy, plat)) {
+                if (enemy.vx > 0 && enemy.x + enemy.width > plat.x) enemy.vx *= -1;
+                else if (enemy.vx < 0 && enemy.x < plat.x + plat.width) enemy.vx *= -1;
+            }
+        }
+
+        // Enemy vs Player collision
+        if (checkCollision(player, enemy)) {
+            // Did Mario jump on top of the enemy?
+            if (player.vy > 0 && player.y + player.height - player.vy <= enemy.y + 12) {
+                enemy.alive = false;
+                player.vy = -player.jumpForce / 1.5; // Bounce off enemy
+                score += 200;
+            } else {
+                // Mario gets hit
+                alert("Game Over! Try again.");
+                resetGame();
+            }
+        }
+    }
+}
+
+// Draw Objects to screen
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    // Translate the context relative to the camera position
+    ctx.translate(-camera.x, 0);
+
+    // 1. Draw Platforms / Blocks
+    for (let plat of platforms) {
+        if (plat.type === 'ground') ctx.fillStyle = "#d88038";
+        else if (plat.type === 'block') ctx.fillStyle = "#b84418";
+        else if (plat.type === 'question') ctx.fillStyle = "#fc9838";
+        else if (plat.type === 'pipe') ctx.fillStyle = "#00a800";
+        
+        ctx.fillRect(plat.x, plat.y, plat.width, plat.height);
+        ctx.strokeStyle = "#000";
+        ctx.strokeRect(plat.x, plat.y, plat.width, plat.height);
+    }
+
+    // 2. Draw Coins
+    ctx.fillStyle = "#fcf878";
+    for (let coin of coins) {
+        if (!coin.collected) {
+            ctx.beginPath();
+            ctx.ellipse(coin.x + coin.width/2, coin.y + coin.height/2, coin.width/2, coin.height/2, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        }
+    }
+
+    // 3. Draw Goombas
+    for (let enemy of enemies) {
+        if (enemy.alive) {
+            ctx.fillStyle = enemy.color;
+            ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+            // Little angry eyes
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(enemy.x + 4, enemy.y + 8, 6, 6);
+            ctx.fillRect(enemy.x + 22, enemy.y + 8, 6, 6);
+        }
+    }
+
+    // 4. Draw Player (Mario)
+    ctx.fillStyle = player.color;
+    ctx.fillRect(player.x, player.y, player.width, player.height);
+    
+    // Draw overalls & cap accents
+    ctx.fillStyle = "#0020b8"; // Blue overalls
+    ctx.fillRect(player.x + 4, player.y + 24, player.width - 8, player.height - 24);
+    ctx.fillStyle = "#fce0a8"; // Skin tone face
+    ctx.fillRect(player.x + 6, player.y + 6, player.width - 12, 14);
+    ctx.fillStyle = player.color; // Red Hat
+    ctx.fillRect(player.x, player.y, player.width, 6);
+
+    ctx.restore();
+
+    // UI Overlay (Fixed to screen)
+    ctx.fillStyle = "#fff";
+    ctx.font = "20px monospace";
+    ctx.fillText(`MARIO   SCORE: ${score}`, 30, 40);
+}
+
+function resetGame() {
+    player.x = 100;
+    player.y = 300;
+    player.vx = 0;
+    player.vy = 0;
+    camera.x = 0;
+    score = 0;
+    coins.forEach(c => c.collected = false);
+    enemies.forEach(e => { e.alive = true; e.x = e.x > 1000 ? 1500 : (e.x > 500 ? 750 : 450); });
+}
+
+// Main Loop
+function gameLoop() {
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+// Start Game
+gameLoop();
+</script>
+
+</body>
+</html>
